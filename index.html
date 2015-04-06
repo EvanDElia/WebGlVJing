@@ -1,0 +1,326 @@
+<html>
+
+<head>
+<title>csc529Web &mdash; Bump</title>
+<meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+
+<script type="text/javascript" src="../common/webgl-utils.js"></script>
+<script type="text/javascript" src="../common/VertexBuffer.js"></script>
+<script type="text/javascript" src="../common/VertexArray.js"></script>
+<script type="text/javascript" src="../common/ShaderProgram.js"></script>
+<script type="text/javascript" src="../common/Texture2D.js"></script>
+<script type="text/javascript" src="../pvmat/PV.js"></script>
+<script type="text/javascript" src="../pvmat/Mat.js"></script>
+<script type="text/javascript" src="Sphere.js"></script>
+<script type="text/javascript" src="NormalShader.js"></script>
+<script type="text/javascript" src="ColorShader.js"></script>
+<script type="text/javascript" src="BumpShader.js"></script>
+<script type="text/javascript" src="Main2.js"></script>
+
+
+<script id="color.fs" type="x-shader/x-fragment">
+precision mediump float;
+
+varying vec4 fs_color;
+
+void main()
+{
+    gl_FragColor = fs_color;
+}
+</script>
+
+<script id="color.vs" type="x-shader/x-vertex">
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+
+attribute vec4 vs_position;
+attribute vec4 vs_color;
+varying vec4 fs_color;
+
+void main()
+{
+    fs_color = vs_color;
+    gl_Position = projection * view * model * vs_position;
+}
+</script>
+<script id="normal.fs" type="x-shader/x-fragment">
+precision mediump float;
+
+// Uniform Variables
+// ------------------------------------------------------------------------------------------------
+uniform sampler2D texDiffuse;   // diffuse texture
+uniform sampler2D texNormal;    // normal texture
+uniform sampler2D texSpecular;  // specular texture
+// ------------------------------------------------------------------------------------------------
+
+// Fragment Shader Input
+// ------------------------------------------------------------------------------------------------
+varying vec2 fs_texcoord;            // texture coordinates
+varying vec3 fs_light_ts;            // light vector (tangent space)
+varying vec3 fs_view_ts;             // view vector (tangent space)
+// ------------------------------------------------------------------------------------------------
+
+// Constants (could be uniforms, but for simplicity...)
+// ------------------------------------------------------------------------------------------------
+const float K_ambient = 0.15;                       // ambient coefficient
+const float K_power = 12.0;                         // specular power
+const vec4 C_ambient = vec4(1.0, 1.0, 1.0, 0.0);    // ambient color
+// ------------------------------------------------------------------------------------------------
+
+void main()
+{
+    // Get the normal color
+    vec3 normal_color = texture2D(texNormal, fs_texcoord).rgb;
+    
+    // EXERCISE 1
+    // Convert the color to a vector
+    // x, y, and z should be in the range -1 to 1, not 0 to 1.
+    vec3 normal_ts = (normal_color - vec3(0.5)) * 2.0; 
+	
+    
+    // EXERCISE 2
+    // Calculate n, l, v by normalizing
+	vec3 n = normalize(normal_ts);
+	vec3 l = normalize(fs_light_ts);
+	vec3 v = normalize(fs_view_ts);
+
+	vec3 r = normalize(2.0 * dot(n, l) * n - l);
+    // Calculate K_diffuse, K_specular
+    float K_diffuse = max(dot(n, l),0.0);
+    float K_specular = pow(max(dot(v, r), 0.0), K_power);
+
+    vec4 diffuse = K_diffuse * texture2D(texDiffuse, fs_texcoord);
+    vec4 specular = K_specular * texture2D(texSpecular, fs_texcoord);
+	diffuse += fract(vec4(fs_view_ts,0)) + fract(vec4(fs_light_ts, 0)) * pow(diffuse, diffuse);
+	//diffuse.g += 0.5;
+	vec4 c = diffuse + specular;
+	c.w = 1.0;
+    gl_FragColor = c;
+}
+</script>
+<script id="normal.vs" type="x-shader/x-vertex">
+// Uniform Variables
+// ------------------------------------------------------------------------------------------------
+uniform mat4 model;         // model matrix (object -> world space)
+uniform mat4 view;          // view matrix (world -> eye space)
+uniform mat4 projection;    // projection matrix (eye -> clip space)
+uniform vec3 light_ws;      // light direction (world space)
+// ------------------------------------------------------------------------------------------------
+
+// Vertex Shader Input
+// ------------------------------------------------------------------------------------------------
+attribute vec4 vs_position;        // position (object space)
+attribute vec3 vs_tangent;         // tangent (object space)
+attribute vec3 vs_bitangent;       // bitangent (object space)
+attribute vec3 vs_normal;          // normal (object space)
+attribute vec2 vs_texcoord;        // texture coordinates
+// ------------------------------------------------------------------------------------------------
+
+// Fragment Shader Input
+// ------------------------------------------------------------------------------------------------
+varying vec2 fs_texcoord;       // texture coordinates
+varying vec3 fs_light_ts;       // light vector (tangent space)
+varying vec3 fs_view_ts;        // view vector (tangent space)
+// ------------------------------------------------------------------------------------------------
+
+void main()
+{
+    gl_Position = projection * view * model * vs_position;
+    fs_texcoord = vs_texcoord;
+
+    mat3 tangent2model;
+    tangent2model[0] = vs_tangent;
+    tangent2model[1] = vs_bitangent;
+    tangent2model[2] = vs_normal;
+
+	vec3 i0 = vs_tangent.xyz;
+    vec3 i1 = vs_bitangent.xyz;
+    vec3 i2 = vs_normal.xyz;
+
+    mat3 model2tangent = mat3(
+                 vec3(i0.x, i1.x, i2.x),
+                 vec3(i0.y, i1.y, i2.y),
+                 vec3(i0.z, i1.z, i2.z)
+                 );
+	i0 = model[0].xyz;
+	i1 = model[1].xyz;
+    i2 = model[2].xyz;
+
+    mat3 world2model = mat3(
+                 vec3(i0.x, i1.x, i2.x),
+                 vec3(i0.y, i1.y, i2.y),
+                 vec3(i0.z, i1.z, i2.z)
+                 );
+
+	i0 = view[0].xyz;
+	i1 = view[1].xyz;
+    i2 = view[2].xyz; 
+
+    mat3 view2world = mat3(
+                 vec3(i0.x, i1.x, i2.x),
+                 vec3(i0.y, i1.y, i2.y),
+                 vec3(i0.z, i1.z, i2.z)
+                 );
+
+    // Calculate fs_view_ts and fs_light_ts
+    // What is fs_view_ts (v) in view coordinates?
+    // Use the matrices I have provided.
+    fs_view_ts = model2tangent * world2model * view2world * (vec3(0, 0, 0) - (view * model * vs_position).xyz);  
+    fs_light_ts = model2tangent * world2model * light_ws; 
+    
+}
+
+</script>
+<script id="bump.fs" type="x-shader/x-fragment">
+precision mediump float;
+
+// Uniform Variables
+// ------------------------------------------------------------------------------------------------
+uniform sampler2D texHeight;    // height (bump) texture
+uniform vec2 texelSize;         // size of texel in UV space
+uniform float depthScale;       // scales bumpiness
+// ------------------------------------------------------------------------------------------------
+
+// Fragment Shader Input
+// ------------------------------------------------------------------------------------------------
+varying vec2 fs_texcoord;            // texture coordinates
+varying vec3 fs_light_ts;            // light vector (tangent space)
+varying vec3 fs_view_ts;             // view vector (tangent space)
+// ------------------------------------------------------------------------------------------------
+
+// Constants (could be uniforms, but for simplicity...)
+// ------------------------------------------------------------------------------------------------
+const float K_ambient = 0.15;                       // ambient coefficient
+const float K_power = 40.0;                         // specular power
+const vec4 C_ambient = vec4(1.0, 1.0, 1.0, 1.0);    // ambient color
+const vec4 C_diffuse = vec4(0.5, 0.5, 0.5, 1.0);    // diffuse color
+const vec4 C_specular = vec4(0.5, 0.5, 0.5, 1.0);    // specular color
+// ------------------------------------------------------------------------------------------------
+
+void main()
+{
+    // Compute the normal offset in tangent space
+    vec2 du = vec2(texelSize.x, 0.0);
+    vec2 dv = vec2(0.0, texelSize.y);
+
+    // EXERCISE 3
+    // Calculate x and y of the normal using the texture and du, dv.
+    float x = -(texture2D(texHeight, fs_texcoord + du).x - 
+		texture2D(texHeight, fs_texcoord - du)).x;
+    float y = -(texture2D(texHeight, fs_texcoord + dv).y - 
+		texture2D(texHeight, fs_texcoord - dv)).y;
+
+    vec2 offset = vec2(x, y);
+    
+    // EXERCISE 4
+    // Add the offset times the depthScale and normalize.
+    // Offset is in the XY tangent space plane. Increasing the
+    // depthScale will pull the normal towards the plane (steeper
+    // normal).
+    vec3 normal_ts = vec3(0, 0, 1);
+	vec2 offsetScale = depthScale * offset;
+	normal_ts = normalize(normal_ts + vec3(offsetScale, 0));
+    
+    // EXERCISE 5
+    // Same as exercise 2
+    // Calculate n, l, v by normalizing
+	vec3 n = normalize(normal_ts);
+	vec3 l = normalize(fs_light_ts);
+	vec3 v = normalize(fs_view_ts);
+
+	vec3 r = normalize(2.0 * dot(n, l) * n - l);
+	//vec3 r = reflect(-l, n); //what is reflect?
+	
+    // Calculate K_diffuse, K_specular
+    float K_diffuse = max(dot(n, l),0.0);
+    float K_specular = pow(max(dot(v, r), 0.0), K_power);
+
+	vec4 c = K_diffuse * C_diffuse + K_specular * C_specular;
+	c.w = 1.0;
+    gl_FragColor = c;
+}
+
+</script>
+<script id="bump.vs" type="x-shader/x-vertex">
+
+// Uniform Variables
+// ------------------------------------------------------------------------------------------------
+uniform mat4 model;         // model matrix (object -> world space)
+uniform mat4 view;          // view matrix (world -> eye space)
+uniform mat4 projection;    // projection matrix (eye -> clip space)
+uniform vec3 light_ws;      // light direction (world space)
+uniform vec2 texcoordScale; // scales the texture coordinates
+// ------------------------------------------------------------------------------------------------
+
+// Vertex Shader Input
+// ------------------------------------------------------------------------------------------------
+attribute vec4 vs_position;        // position (object space)
+attribute vec3 vs_tangent;         // tangent (object space)
+attribute vec3 vs_bitangent;       // bitangent (object space)
+attribute vec3 vs_normal;          // normal (object space)
+attribute vec2 vs_texcoord;        // texture coordinates
+// ------------------------------------------------------------------------------------------------
+
+// Fragment Shader Input
+// ------------------------------------------------------------------------------------------------
+varying vec2 fs_texcoord;       // texture coordinates
+varying vec3 fs_light_ts;       // light vector (tangent space)
+varying vec3 fs_view_ts;        // view vector (tangent space)
+// ------------------------------------------------------------------------------------------------
+
+void main()
+{
+    gl_Position = projection * view * model * vs_position;
+    fs_texcoord = vs_texcoord * texcoordScale; 
+
+    mat3 tangent2model;
+    tangent2model[0] = vs_tangent;
+    tangent2model[1] = vs_bitangent;
+    tangent2model[2] = vs_normal;
+
+    vec3 i0 = vs_tangent.xyz;
+    vec3 i1 = vs_bitangent.xyz;
+    vec3 i2 = vs_normal.xyz;
+
+    mat3 model2tangent = mat3(
+                 vec3(i0.x, i1.x, i2.x),
+                 vec3(i0.y, i1.y, i2.y),
+                 vec3(i0.z, i1.z, i2.z)
+                 );
+	i0 = model[0].xyz;
+	i1 = model[1].xyz;
+    i2 = model[2].xyz;
+
+    mat3 world2model = mat3(
+                 vec3(i0.x, i1.x, i2.x),
+                 vec3(i0.y, i1.y, i2.y),
+                 vec3(i0.z, i1.z, i2.z)
+                 );
+
+	i0 = view[0].xyz;
+	i1 = view[1].xyz;
+    i2 = view[2].xyz; 
+
+    mat3 view2world = mat3(
+                 vec3(i0.x, i1.x, i2.x),
+                 vec3(i0.y, i1.y, i2.y),
+                 vec3(i0.z, i1.z, i2.z)
+                 );
+
+    fs_view_ts = model2tangent * world2model * view2world * (vec3(0, 0, 0) - (view * model * vs_position).xyz);  
+    fs_light_ts = model2tangent * world2model * light_ws; 
+}
+
+</script>
+
+</head>
+
+<body onload="webGLStart();" style="background-color: white;">
+	<canvas id="canvas"
+		style="border: none; padding-left: 0; padding-right: 0; margin: auto; display: block;"
+		width="600" height="600"></canvas>
+	<br />
+</body>
+
+</html>
